@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -33,7 +35,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
     <script>
         // Campaign data from CSV
-       const campaignData = [
+const campaignData = [
   {"Location":"48083, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
   {"Location":"48084, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
   {"Location":"48067, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
@@ -176,11 +178,27 @@
   {"Location":"8.0|mi|8510 N Canton Center Rd, Canton, MI 48187","Campaign":"MCD- Havens Orthodontics-Canton"}
 ];
 
-        // Extract ZIP codes and create campaign mapping
+
+        // Parse location data - handle both ZIP codes and radius targets
         const zipToCampaign = {};
+        const radiusTargets = [];
+        
         campaignData.forEach(row => {
-            const zip = row.Location.split(',')[0];
-            zipToCampaign[zip] = row.Campaign;
+            if (row.Location.includes('|mi|')) {
+                // Parse radius format: "10.0|mi|1305 S Main St, Chelsea, MI 48118"
+                const parts = row.Location.split('|mi|');
+                const radius = parseFloat(parts[0]);
+                const address = parts[1];
+                radiusTargets.push({
+                    address: address,
+                    radius: radius,
+                    campaign: row.Campaign
+                });
+            } else {
+                // Regular ZIP code
+                const zip = row.Location.split(',')[0];
+                zipToCampaign[zip] = row.Campaign;
+            }
         });
 
         // Generate colors for campaigns
@@ -233,7 +251,7 @@
             }
         }
 
-        // Load GeoJSON with error handling
+        // Load GeoJSON and add radius circles
         fetch('mi_michigan_zip_codes_geo.min.json')
             .then(r => {
                 console.log('Fetch response:', r.status);
@@ -242,10 +260,39 @@
             })
             .then(data => {
                 console.log('GeoJSON loaded, features:', data.features?.length);
+                
+                // Add ZIP polygons
                 L.geoJSON(data, {
                     style: getStyle,
                     onEachFeature: onEachFeature
                 }).addTo(map);
+                
+                // Add radius circles (requires geocoding addresses)
+                radiusTargets.forEach(target => {
+                    // Simple geocoding using Nominatim (free)
+                    const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(target.address)}`;
+                    
+                    fetch(geocodeUrl)
+                        .then(r => r.json())
+                        .then(results => {
+                            if (results.length > 0) {
+                                const lat = parseFloat(results[0].lat);
+                                const lon = parseFloat(results[0].lon);
+                                
+                                // Add circle
+                                const circle = L.circle([lat, lon], {
+                                    color: campaignColors[target.campaign],
+                                    fillColor: campaignColors[target.campaign],
+                                    fillOpacity: 0.3,
+                                    radius: target.radius * 1609.34 // Convert miles to meters
+                                }).addTo(map);
+                                
+                                // Add popup
+                                circle.bindPopup(`<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`);
+                            }
+                        })
+                        .catch(err => console.warn('Geocoding failed for:', target.address));
+                });
             })
             .catch(err => {
                 console.error('Failed to load GeoJSON:', err);
