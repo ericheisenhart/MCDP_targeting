@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Michigan ZIP Code Campaigns</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .legend { 
+            background: white; 
+            padding: 10px; 
+            border-radius: 5px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .legend h4 { margin: 0 0 10px 0; }
+        .legend-item { margin: 3px 0; font-size: 12px; }
+        .legend-color { 
+            width: 15px; 
+            height: 15px; 
+            display: inline-block; 
+            margin-right: 5px; 
+            border: 1px solid #999;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script>
+        // Campaign data from CSV
+
+const campaignData = [
+  {"Location":"48083, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48084, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48067, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48071, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48073, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48069, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48070, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48017, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48009, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48072, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48367, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Washington"},
+  {"Location":"48065, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Washington"},
+  {"Location":"48095, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Washington"},
+  {"Location":"48306, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Washington"},
+  {"Location":"48094, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Washington"},
+  {"Location":"48005, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Washington"},
+  {"Location":"48363, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Washington"},
+  {"Location":"49640, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"49630, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"15.0|mi|4952 Skyview Court, Traverse City, MI 49684","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"49660, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"49646, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"48653, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"10.0|mi|12750 S Saginaw St, Grand Blanc, MI 48439","Campaign":"MCD-Orthodontic Specialists-Grand Blanc"},
+  {"Location":"48334, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48152, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48331, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48154, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48335, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48322, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48240, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48336, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"10.0|mi|1305 S Main St, Chelsea, MI 48118","Campaign":"MCD-Chelsea Orthodontics-Chelsea"},
+  {"Location":"10.0|mi|214 Winston Dr, Marshall, MI 49068","Campaign":"MCD-Bandeen Orthodontics-Marshall"},
+  {"Location":"18.0|mi|Howell Orthodontics, 207 N Michigan Ave Suite 202, Howell, MI 48843","Campaign":"MCD-Howell Orthodontics-Howell"},
+  {"Location":"7.0|mi|4250 Pontiac Lake Rd, Waterford Twp, MI 48328","Campaign":"MCD-Lazarus Orthodontics-Waterford Twp"},
+  {"Location":"8.0|mi|8510 N Canton Center Rd, Canton, MI 48187","Campaign":"MCD-Havens Orthodontics-Canton"},
+  {"Location":"8.0|mi|27600 Middlebelt Rd, Farmington Hills, MI 48334","Campaign":"MCD-Jusino Orthodontics-Farmington Hills"},
+  {"Location":"49050, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"49052, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"49094, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"10.0|mi|4602 Beckley Road, Battle Creek, MI 49015","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"49089, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"48336, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48334, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48331, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48335, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48152, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48240, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48154, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48322, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Farmington"},
+  {"Location":"48042, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48085, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48313, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48317, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48310, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48088, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"10.0|mi|750 Jefferson Street, Three Rivers, MI 49093","Campaign":"MCD-Bandeen Orthodontics-Three Rivers"},
+  {"Location":"48093, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48098, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48044, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48312, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48315, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48038, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"49040, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Three Rivers"},
+  {"Location":"48314, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48092, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48316, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"30.0|mi|106 E Garfield Ave, Charlevoix, MI 49720","Campaign":"MCD-Schulz Orthodontics-Charlevoix"},
+  {"Location":"8.0|mi|27600 Middlebelt Rd, Farmington Hills, MI 48334","Campaign":"MCD- Jusino Orthodontics-Farmington Hills"},
+  {"Location":"10.0|mi|106 E Garfield Ave, Charlevoix, MI 49720","Campaign":"MCD-Schulz Orthodontics--Charlevoix"},
+  {"Location":"10.0|mi|1305 S Main St, Chelsea, MI 48118","Campaign":"MCD-Chelsea Orthodontics-Chelsea"},
+  {"Location":"48306, Michigan, United States","Campaign":"MCD- Havens Orthodontics-Washington"},
+  {"Location":"48005, Michigan, United States","Campaign":"MCD- Havens Orthodontics-Washington"},
+  {"Location":"48363, Michigan, United States","Campaign":"MCD- Havens Orthodontics-Washington"},
+  {"Location":"48065, Michigan, United States","Campaign":"MCD- Havens Orthodontics-Washington"},
+  {"Location":"48095, Michigan, United States","Campaign":"MCD- Havens Orthodontics-Washington"},
+  {"Location":"48094, Michigan, United States","Campaign":"MCD- Havens Orthodontics-Washington"},
+  {"Location":"48367, Michigan, United States","Campaign":"MCD- Havens Orthodontics-Washington"},
+  {"Location":"48080, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48230, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48236, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48082, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48066, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48045, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48081, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48035, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"10.0|mi|3910 W Centre Ave, Portage, MI 49024","Campaign":"MCD-Bandeen Orthodontics-Portage"},
+  {"Location":"10.0|mi|12750 S Saginaw St, Grand Blanc, MI 48439","Campaign":"MCD-Orthodontic Specialists-Grand Blanc"},
+  {"Location":"48082, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48045, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48066, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48035, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48236, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48081, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48080, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"48230, Michigan, United States","Campaign":"MCD-Havens Orthodontics-St. Clair Shores"},
+  {"Location":"10.0|mi|214 Winston Dr, Marshall, MI 49068","Campaign":"MCD-Bandeen Orthodontics-Marshall"},
+  {"Location":"10.0|mi|750 Jefferson Street, Three Rivers, MI 49093","Campaign":"MCD-Bandeen Orthodontics-Three Rivers"},
+  {"Location":"49040, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Three Rivers"},
+  {"Location":"49660, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"10.0|mi|4952 Skyview Court, Traverse City, MI 49684","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"49646, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"49640, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"49630, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"48653, Michigan, United States","Campaign":"MCD-Schulz Orthodontics-Traverse City"},
+  {"Location":"7.0|mi|4250 Pontiac Lake Rd, Waterford Twp, MI 48328","Campaign":"MCD-Lazarus Orthodontics-Waterford Twp"},
+  {"Location":"49089, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"49050, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"49094, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"49052, Michigan, United States","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"10.0|mi|4602 Beckley Road, Battle Creek, MI 49015","Campaign":"MCD-Bandeen Orthodontics-Battle Creek"},
+  {"Location":"48085, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48313, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48042, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48038, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48098, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48088, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48312, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48044, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48093, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48092, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48317, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48314, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48315, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48310, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48316, Michigan, United States","Campaign":"MCD-Heights Orthodontics-Sterling Heights"},
+  {"Location":"48070, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48072, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48009, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48084, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48073, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48017, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48071, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48083, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48067, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"48069, Michigan, United States","Campaign":"MCD-Havens Orthodontics-Clawson"},
+  {"Location":"10.0|mi|3910 W Centre Ave, Portage, MI 49024","Campaign":"MCD-Bandeen Orthodontics-Portage"},
+  {"Location":"18.0|mi|Howell Orthodontics, 207 N Michigan Ave Suite 202, Howell, MI 48843","Campaign":"MCD-Howell Orthodontics-Howell"},
+  {"Location":"8.0|mi|8510 N Canton Center Rd, Canton, MI 48187","Campaign":"MCD- Havens Orthodontics-Canton"}
+];
+            // Add all your data here
+
+        // Extract ZIP codes and create campaign mapping
+        const zipToCampaign = {};
+        campaignData.forEach(row => {
+            const zip = row.Location.split(',')[0];
+            zipToCampaign[zip] = row.Campaign;
+        });
+
+        // Generate colors for campaigns
+        const campaigns = [...new Set(campaignData.map(row => row.Campaign))];
+        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'];
+        const campaignColors = {};
+        campaigns.forEach((campaign, i) => {
+            campaignColors[campaign] = colors[i % colors.length];
+        });
+
+        // Initialize map
+        const map = L.map('map').setView([44.3, -84.5], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // Sample Michigan ZIP GeoJSON (replace with your 20MB file)
+        const sampleZipData = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"ZCTA5CE10": "48083"},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[-83.2, 42.5], [-83.1, 42.5], [-83.1, 42.6], [-83.2, 42.6], [-83.2, 42.5]]]
+                    }
+                }
+                // This is just a sample - your real GeoJSON will have hundreds of ZIP polygons
+            ]
+        };
+
+        // Style function for ZIP codes
+        function getStyle(feature) {
+            const zip = feature.properties.ZCTA5CE10;
+            const campaign = zipToCampaign[zip];
+            return {
+                fillColor: campaign ? campaignColors[campaign] : '#cccccc',
+                weight: 1,
+                opacity: 1,
+                color: 'white',
+                fillOpacity: 0.7
+            };
+        }
+
+        // Add ZIP polygons to map
+        function onEachFeature(feature, layer) {
+            const zip = feature.properties.ZCTA5CE10;
+            const campaign = zipToCampaign[zip];
+            if (campaign) {
+                layer.bindPopup(`<b>ZIP: ${zip}</b><br>${campaign}`);
+            }
+        }
+
+        // Load GeoJSON with error handling
+        fetch('mi_michigan_zip_codes_geo.min.json')
+            .then(r => {
+                console.log('Fetch response:', r.status);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                console.log('GeoJSON loaded, features:', data.features?.length);
+                L.geoJSON(data, {
+                    style: getStyle,
+                    onEachFeature: onEachFeature
+                }).addTo(map);
+            })
+            .catch(err => {
+                console.error('Failed to load GeoJSON:', err);
+                alert('Failed to load ZIP boundaries: ' + err.message);
+            });
+
+        // Create legend
+        const legend = L.control({position: 'topright'});
+        legend.onAdd = function() {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = '<h4>Campaigns</h4>';
+            campaigns.forEach(campaign => {
+                div.innerHTML += `<div class="legend-item">
+                    <span class="legend-color" style="background: ${campaignColors[campaign]}"></span>
+                    ${campaign.replace('MCD-', '')}
+                </div>`;
+            });
+            return div;
+        };
+        legend.addTo(map);
+
+        // Replace campaignData array with your full CSV data
+        // Replace sampleZipData with: fetch('your-michigan-zips.geojson').then(r => r.json())
+    </script>
+</body>
+</html>
