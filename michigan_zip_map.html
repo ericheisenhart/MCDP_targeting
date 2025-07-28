@@ -105,84 +105,81 @@
             }
         }
 
-        // Function to create simplified address variations for fallback geocoding
-        function getAddressVariations(address) {
-            const variations = [address]; // Start with original
+        // Function to extract city, state, ZIP from address for fallback geocoding
+        function extractCityStateZip(address) {
+            // Split by commas and get the last parts
+            const parts = address.split(',').map(part => part.trim());
             
-            // Remove business names at the beginning
-            const withoutBusiness = address.replace(/^[^,]+,\s*/, '');
-            if (withoutBusiness !== address) {
-                variations.push(withoutBusiness);
+            if (parts.length >= 2) {
+                // Get the last two parts (should be "City" and "State ZIP")
+                const city = parts[parts.length - 2];
+                const stateZip = parts[parts.length - 1];
+                
+                // Combine city, state, and ZIP
+                return `${city}, ${stateZip}`;
             }
             
-            // Remove suite/unit numbers
-            const withoutSuite = address.replace(/\s+(suite|unit|ste|apt)\s+[\w\d]+/i, '');
-            if (withoutSuite !== address) {
-                variations.push(withoutSuite);
-            }
-            
-            // Try just the city and state
-            const parts = address.split(',');
-            if (parts.length >= 3) {
-                const cityState = parts.slice(-2).join(',').trim();
-                variations.push(cityState);
-            }
-            
-            // Try with different street suffixes
-            const streetVariations = address
-                .replace(/\bCourt\b/i, 'Ct')
-                .replace(/\bStreet\b/i, 'St')
-                .replace(/\bAvenue\b/i, 'Ave')
-                .replace(/\bRoad\b/i, 'Rd')
-                .replace(/\bDrive\b/i, 'Dr');
-            if (streetVariations !== address) {
-                variations.push(streetVariations);
-            }
-            
-            return [...new Set(variations)]; // Remove duplicates
+            // If parsing fails, return the original address
+            return address;
         }
 
-        // Function to geocode address using AllOrigins CORS proxy with fallback
+        // Function to geocode address using AllOrigins CORS proxy with city/state/ZIP fallback
         async function geocodeWithProxy(address) {
-            const variations = getAddressVariations(address);
+            const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(nominatimUrl)}`;
             
-            for (let i = 0; i < variations.length; i++) {
-                const currentAddress = variations[i];
-                const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(currentAddress)}`;
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(nominatimUrl)}`;
+            try {
+                // Try original address first
+                const response = await fetch(proxyUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 
-                try {
-                    const response = await fetch(proxyUrl);
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const results = JSON.parse(data.contents);
+                
+                if (results && results.length > 0) {
+                    return {
+                        lat: parseFloat(results[0].lat),
+                        lon: parseFloat(results[0].lon),
+                        usedFallback: false
+                    };
+                }
+                
+                // If original fails, try city/state/ZIP fallback
+                debugLog(`  └─ Original failed, trying city/state/ZIP fallback...`);
+                const fallbackAddress = extractCityStateZip(address);
+                
+                if (fallbackAddress !== address) {
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+                    
+                    const fallbackUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackAddress)}`;
+                    const fallbackProxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(fallbackUrl)}`;
+                    
+                    const fallbackResponse = await fetch(fallbackProxyUrl);
+                    if (!fallbackResponse.ok) {
+                        throw new Error(`Fallback HTTP ${fallbackResponse.status}`);
                     }
                     
-                    const data = await response.json();
-                    const results = JSON.parse(data.contents);
+                    const fallbackData = await fallbackResponse.json();
+                    const fallbackResults = JSON.parse(fallbackData.contents);
                     
-                    if (results && results.length > 0) {
-                        if (i > 0) {
-                            debugLog(`  └─ Found using variation: "${currentAddress}"`);
-                        }
+                    if (fallbackResults && fallbackResults.length > 0) {
+                        debugLog(`  └─ Found using fallback: "${fallbackAddress}"`);
                         return {
-                            lat: parseFloat(results[0].lat),
-                            lon: parseFloat(results[0].lon)
+                            lat: parseFloat(fallbackResults[0].lat),
+                            lon: parseFloat(fallbackResults[0].lon),
+                            usedFallback: true,
+                            fallbackAddress: fallbackAddress
                         };
                     }
-                    
-                    // Small delay between variations
-                    if (i < variations.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                    
-                } catch (error) {
-                    if (i === variations.length - 1) {
-                        throw new Error(`All variations failed: ${error.message}`);
-                    }
                 }
+                
+                throw new Error('No geocoding results found for original or fallback address');
+                
+            } catch (error) {
+                throw new Error(`Geocoding failed: ${error.message}`);
             }
-            
-            throw new Error('No geocoding results found for any variation');
         }
 
         // Function to process campaign data and create map
@@ -295,11 +292,12 @@
                     }).addTo(map);
                 }
                 
-                // Add radius circles using AllOrigins CORS proxy with smart fallbacks
-                debugLog(`Starting geocoding with smart fallbacks for ${radiusTargets.length} addresses...`);
+                // Add radius circles using AllOrigins CORS proxy with city/state/ZIP fallback
+                debugLog(`Starting geocoding with city/state/ZIP fallbacks for ${radiusTargets.length} addresses...`);
                 
                 let successCount = 0;
                 let failCount = 0;
+                let fallbackCount = 0;
                 
                 // Process addresses with delay to avoid overwhelming the service
                 for (let i = 0; i < radiusTargets.length; i++) {
@@ -307,20 +305,29 @@
                     debugLog(`Geocoding ${i + 1}/${radiusTargets.length}: ${target.address}`);
                     
                     try {
-                        const coords = await geocodeWithProxy(target.address);
+                        const result = await geocodeWithProxy(target.address);
                         
                         // Add circle to map
-                        const circle = L.circle([coords.lat, coords.lon], {
+                        const circle = L.circle([result.lat, result.lon], {
                             color: campaignColors[target.campaign],
                             fillColor: campaignColors[target.campaign],
                             fillOpacity: 0.3,
                             radius: target.radius * 1609.34 // Convert miles to meters
                         }).addTo(map);
                         
-                        // Add popup
-                        circle.bindPopup(`<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`);
+                        // Add popup with info about whether fallback was used
+                        const popupText = result.usedFallback 
+                            ? `<b>${target.campaign}</b><br>${target.radius} mile radius<br><small><i>Centered on: ${result.fallbackAddress}</i></small>`
+                            : `<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`;
                         
-                        debugLog(`✓ Success: ${target.address}`);
+                        circle.bindPopup(popupText);
+                        
+                        if (result.usedFallback) {
+                            debugLog(`✓ Success (fallback): ${target.address}`);
+                            fallbackCount++;
+                        } else {
+                            debugLog(`✓ Success: ${target.address}`);
+                        }
                         successCount++;
                         
                         // Small delay between requests to be respectful
@@ -329,12 +336,12 @@
                         }
                         
                     } catch (error) {
-                        debugLog(`✗ Failed all variations: ${target.address}`);
+                        debugLog(`✗ Failed: ${target.address} (${error.message})`);
                         failCount++;
                     }
                 }
 
-                debugLog(`Geocoding complete! ✓${successCount} success, ✗${failCount} failed`);
+                debugLog(`Geocoding complete! ✓${successCount} success (${fallbackCount} used city/state/ZIP), ✗${failCount} failed`);
 
                 // Create legend
                 const legend = L.control({position: 'topright'});
@@ -354,10 +361,10 @@
                 // Hide loading indicator
                 document.getElementById('loading').style.display = 'none';
                 
-                // Hide debug info after 15 seconds (longer due to fallback attempts)
+                // Hide debug info after 12 seconds
                 setTimeout(() => {
                     document.getElementById('debug').style.display = 'none';
-                }, 15000);
+                }, 12000);
 
             } catch (error) {
                 console.error('Error initializing map:', error);
