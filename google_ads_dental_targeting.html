@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Michigan ZIP Code Campaigns</title>
+    <title>Michigan Dental Campaign Targeting</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
@@ -52,7 +52,7 @@
     </style>
 </head>
 <body>
-    <div id="loading" class="loading">Loading campaign data...</div>
+    <div id="loading" class="loading">Loading dental campaign data...</div>
     <div id="debug" class="debug">Debug info will appear here...</div>
     <div id="map"></div>
     
@@ -347,7 +347,7 @@
                 const legend = L.control({position: 'topright'});
                 legend.onAdd = function() {
                     const div = L.DomUtil.create('div', 'legend');
-                    div.innerHTML = '<h4>Campaigns</h4>';
+                    div.innerHTML = '<h4>Dental Campaigns</h4>';
                     campaigns.forEach(campaign => {
                         div.innerHTML += `<div class="legend-item">
                             <span class="legend-color" style="background: ${campaignColors[campaign]}"></span>
