@@ -45,6 +45,8 @@
             border-radius: 5px;
             font-size: 12px;
             max-width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
             z-index: 1000;
         }
     </style>
@@ -62,6 +64,7 @@
             console.log(message);
             const debugDiv = document.getElementById('debug');
             debugDiv.innerHTML += message + '<br>';
+            debugDiv.scrollTop = debugDiv.scrollHeight;
         }
 
         // Initialize map
@@ -99,6 +102,33 @@
             } catch (error) {
                 console.error('Error loading campaign data:', error);
                 throw error;
+            }
+        }
+
+        // Function to geocode address using AllOrigins CORS proxy
+        async function geocodeWithProxy(address) {
+            const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(nominatimUrl)}`;
+            
+            try {
+                const response = await fetch(proxyUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const results = JSON.parse(data.contents);
+                
+                if (results && results.length > 0) {
+                    return {
+                        lat: parseFloat(results[0].lat),
+                        lon: parseFloat(results[0].lon)
+                    };
+                } else {
+                    throw new Error('No geocoding results found');
+                }
+            } catch (error) {
+                throw new Error(`Geocoding failed: ${error.message}`);
             }
         }
 
@@ -212,50 +242,46 @@
                     }).addTo(map);
                 }
                 
-                // Add radius circles (requires geocoding addresses)
-                let geocodingCount = 0;
-                debugLog(`Starting geocoding for ${radiusTargets.length} addresses...`);
+                // Add radius circles using AllOrigins CORS proxy
+                debugLog(`Starting geocoding with AllOrigins proxy for ${radiusTargets.length} addresses...`);
                 
-                radiusTargets.forEach((target, index) => {
-                    // Add delay between requests to avoid rate limiting
-                    setTimeout(() => {
-                        debugLog(`Geocoding ${index + 1}/${radiusTargets.length}: ${target.address}`);
+                let successCount = 0;
+                let failCount = 0;
+                
+                // Process addresses with delay to avoid overwhelming the service
+                for (let i = 0; i < radiusTargets.length; i++) {
+                    const target = radiusTargets[i];
+                    debugLog(`Geocoding ${i + 1}/${radiusTargets.length}: ${target.address}`);
+                    
+                    try {
+                        const coords = await geocodeWithProxy(target.address);
                         
-                        // Simple geocoding using Nominatim (free)
-                        const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(target.address)}`;
+                        // Add circle to map
+                        const circle = L.circle([coords.lat, coords.lon], {
+                            color: campaignColors[target.campaign],
+                            fillColor: campaignColors[target.campaign],
+                            fillOpacity: 0.3,
+                            radius: target.radius * 1609.34 // Convert miles to meters
+                        }).addTo(map);
                         
-                        fetch(geocodeUrl)
-                            .then(r => r.json())
-                            .then(results => {
-                                if (results.length > 0) {
-                                    const lat = parseFloat(results[0].lat);
-                                    const lon = parseFloat(results[0].lon);
-                                    
-                                    debugLog(`✓ Geocoded: ${target.address} -> ${lat}, ${lon}`);
-                                    
-                                    // Add circle
-                                    const circle = L.circle([lat, lon], {
-                                        color: campaignColors[target.campaign],
-                                        fillColor: campaignColors[target.campaign],
-                                        fillOpacity: 0.3,
-                                        radius: target.radius * 1609.34 // Convert miles to meters
-                                    }).addTo(map);
-                                    
-                                    // Add popup
-                                    circle.bindPopup(`<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`);
-                                    
-                                    geocodingCount++;
-                                    debugLog(`Circles added: ${geocodingCount}/${radiusTargets.length}`);
-                                } else {
-                                    debugLog(`✗ No geocoding results for: ${target.address}`);
-                                }
-                            })
-                            .catch(err => {
-                                debugLog(`✗ Geocoding failed for ${target.address}: ${err.message}`);
-                                console.warn('Geocoding failed for:', target.address, err);
-                            });
-                    }, index * 1000); // 1 second delay between each request
-                });
+                        // Add popup
+                        circle.bindPopup(`<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`);
+                        
+                        debugLog(`✓ Success: ${target.address}`);
+                        successCount++;
+                        
+                        // Small delay between requests to be respectful
+                        if (i < radiusTargets.length - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                        }
+                        
+                    } catch (error) {
+                        debugLog(`✗ Failed: ${target.address} (${error.message})`);
+                        failCount++;
+                    }
+                }
+
+                debugLog(`Geocoding complete! ✓${successCount} success, ✗${failCount} failed`);
 
                 // Create legend
                 const legend = L.control({position: 'topright'});
@@ -274,6 +300,11 @@
 
                 // Hide loading indicator
                 document.getElementById('loading').style.display = 'none';
+                
+                // Hide debug info after 10 seconds (enough time to see geocoding progress)
+                setTimeout(() => {
+                    document.getElementById('debug').style.display = 'none';
+                }, 10000);
 
             } catch (error) {
                 console.error('Error initializing map:', error);
