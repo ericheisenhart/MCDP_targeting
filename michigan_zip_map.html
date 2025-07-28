@@ -36,15 +36,34 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.3);
             z-index: 1000;
         }
+        .debug {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
     <div id="loading" class="loading">Loading campaign data...</div>
+    <div id="debug" class="debug">Debug info will appear here...</div>
     <div id="map"></div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script>
+        // Debug function
+        function debugLog(message) {
+            console.log(message);
+            const debugDiv = document.getElementById('debug');
+            debugDiv.innerHTML += message + '<br>';
+        }
+
         // Initialize map
         const map = L.map('map').setView([44.3, -84.5], 7);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -52,12 +71,14 @@
         // Function to load and process CSV data
         async function loadCampaignData() {
             try {
+                debugLog('Attempting to fetch CSV...');
                 const response = await fetch('MCDP_Location_Targeting.csv');
                 if (!response.ok) {
                     throw new Error(`Failed to load CSV: ${response.status} ${response.statusText}`);
                 }
                 
                 const csvText = await response.text();
+                debugLog(`CSV loaded: ${csvText.length} characters`);
                 
                 return new Promise((resolve, reject) => {
                     Papa.parse(csvText, {
@@ -67,6 +88,7 @@
                             if (results.errors.length > 0) {
                                 console.warn('CSV parsing warnings:', results.errors);
                             }
+                            debugLog(`CSV parsed: ${results.data.length} rows`);
                             resolve(results.data);
                         },
                         error: function(error) {
@@ -108,6 +130,9 @@
                         zipToCampaign[zip] = row.Campaign;
                     }
                 });
+
+                debugLog(`Found ${radiusTargets.length} radius targets`);
+                debugLog(`Found ${Object.keys(zipToCampaign).length} ZIP codes`);
 
                 // Generate colors for campaigns
                 const campaigns = [...new Set(campaignData.map(row => row.Campaign).filter(Boolean))];
@@ -161,6 +186,7 @@
                     if (geoResponse.ok) {
                         const data = await geoResponse.json();
                         console.log('GeoJSON loaded, features:', data.features?.length);
+                        debugLog(`GeoJSON loaded: ${data.features?.length} features`);
                         
                         // Add ZIP polygons
                         L.geoJSON(data, {
@@ -169,6 +195,7 @@
                         }).addTo(map);
                     } else {
                         console.warn('GeoJSON file not found, using sample data');
+                        debugLog('GeoJSON not found, using sample data');
                         // Use sample data if GeoJSON file doesn't exist
                         L.geoJSON(sampleZipData, {
                             style: getStyle,
@@ -177,6 +204,7 @@
                     }
                 } catch (geoError) {
                     console.warn('Failed to load GeoJSON:', geoError);
+                    debugLog(`GeoJSON error: ${geoError.message}`);
                     // Use sample data as fallback
                     L.geoJSON(sampleZipData, {
                         style: getStyle,
@@ -185,30 +213,48 @@
                 }
                 
                 // Add radius circles (requires geocoding addresses)
-                radiusTargets.forEach(target => {
-                    // Simple geocoding using Nominatim (free)
-                    const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(target.address)}`;
-                    
-                    fetch(geocodeUrl)
-                        .then(r => r.json())
-                        .then(results => {
-                            if (results.length > 0) {
-                                const lat = parseFloat(results[0].lat);
-                                const lon = parseFloat(results[0].lon);
-                                
-                                // Add circle
-                                const circle = L.circle([lat, lon], {
-                                    color: campaignColors[target.campaign],
-                                    fillColor: campaignColors[target.campaign],
-                                    fillOpacity: 0.3,
-                                    radius: target.radius * 1609.34 // Convert miles to meters
-                                }).addTo(map);
-                                
-                                // Add popup
-                                circle.bindPopup(`<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`);
-                            }
-                        })
-                        .catch(err => console.warn('Geocoding failed for:', target.address));
+                let geocodingCount = 0;
+                debugLog(`Starting geocoding for ${radiusTargets.length} addresses...`);
+                
+                radiusTargets.forEach((target, index) => {
+                    // Add delay between requests to avoid rate limiting
+                    setTimeout(() => {
+                        debugLog(`Geocoding ${index + 1}/${radiusTargets.length}: ${target.address}`);
+                        
+                        // Simple geocoding using Nominatim (free)
+                        const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(target.address)}`;
+                        
+                        fetch(geocodeUrl)
+                            .then(r => r.json())
+                            .then(results => {
+                                if (results.length > 0) {
+                                    const lat = parseFloat(results[0].lat);
+                                    const lon = parseFloat(results[0].lon);
+                                    
+                                    debugLog(`✓ Geocoded: ${target.address} -> ${lat}, ${lon}`);
+                                    
+                                    // Add circle
+                                    const circle = L.circle([lat, lon], {
+                                        color: campaignColors[target.campaign],
+                                        fillColor: campaignColors[target.campaign],
+                                        fillOpacity: 0.3,
+                                        radius: target.radius * 1609.34 // Convert miles to meters
+                                    }).addTo(map);
+                                    
+                                    // Add popup
+                                    circle.bindPopup(`<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`);
+                                    
+                                    geocodingCount++;
+                                    debugLog(`Circles added: ${geocodingCount}/${radiusTargets.length}`);
+                                } else {
+                                    debugLog(`✗ No geocoding results for: ${target.address}`);
+                                }
+                            })
+                            .catch(err => {
+                                debugLog(`✗ Geocoding failed for ${target.address}: ${err.message}`);
+                                console.warn('Geocoding failed for:', target.address, err);
+                            });
+                    }, index * 1000); // 1 second delay between each request
                 });
 
                 // Create legend
@@ -232,6 +278,7 @@
             } catch (error) {
                 console.error('Error initializing map:', error);
                 document.getElementById('loading').innerHTML = `Error loading data: ${error.message}`;
+                debugLog(`ERROR: ${error.message}`);
             }
         }
 
