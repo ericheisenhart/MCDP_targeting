@@ -75,7 +75,7 @@
         async function loadCampaignData() {
             try {
                 debugLog('Attempting to fetch CSV...');
-                const response = await fetch('MCDP_Location_Targeting.csv');
+                const response = await fetch('google_ads_orthodontics_targeting.csv');
                 if (!response.ok) {
                     throw new Error(`Failed to load CSV: ${response.status} ${response.statusText}`);
                 }
