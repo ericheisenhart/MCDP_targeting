@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Michigan ZIP Code Campaigns</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        .legend { 
+            background: white; 
+            padding: 10px; 
+            border-radius: 5px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .legend h4 { margin: 0 0 10px 0; }
+        .legend-item { margin: 3px 0; font-size: 12px; }
+        .legend-color { 
+            width: 15px; 
+            height: 15px; 
+            display: inline-block; 
+            margin-right: 5px; 
+            border: 1px solid #999;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        .debug {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">Loading campaign data...</div>
+    <div id="debug" class="debug">Debug info will appear here...</div>
+    <div id="map"></div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script>
+        // Debug function
+        function debugLog(message) {
+            console.log(message);
+            const debugDiv = document.getElementById('debug');
+            debugDiv.innerHTML += message + '<br>';
+            debugDiv.scrollTop = debugDiv.scrollHeight;
+        }
+
+        // Initialize map
+        const map = L.map('map').setView([44.3, -84.5], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // Function to load and process CSV data
+        async function loadCampaignData() {
+            try {
+                debugLog('Attempting to fetch CSV...');
+                const response = await fetch('MCDP_Location_Targeting.csv');
+                if (!response.ok) {
+                    throw new Error(`Failed to load CSV: ${response.status} ${response.statusText}`);
+                }
+                
+                const csvText = await response.text();
+                debugLog(`CSV loaded: ${csvText.length} characters`);
+                
+                return new Promise((resolve, reject) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            if (results.errors.length > 0) {
+                                console.warn('CSV parsing warnings:', results.errors);
+                            }
+                            debugLog(`CSV parsed: ${results.data.length} rows`);
+                            resolve(results.data);
+                        },
+                        error: function(error) {
+                            reject(error);
+                        }
+                    });
+                });
+            } catch (error) {
+                console.error('Error loading campaign data:', error);
+                throw error;
+            }
+        }
+
+        // Function to extract city, state, ZIP from address for fallback geocoding
+        function extractCityStateZip(address) {
+            // Split by commas and get the last parts
+            const parts = address.split(',').map(part => part.trim());
+            
+            if (parts.length >= 2) {
+                // Get the last two parts (should be "City" and "State ZIP")
+                const city = parts[parts.length - 2];
+                const stateZip = parts[parts.length - 1];
+                
+                // Combine city, state, and ZIP
+                return `${city}, ${stateZip}`;
+            }
+            
+            // If parsing fails, return the original address
+            return address;
+        }
+
+        // Function to geocode address using AllOrigins CORS proxy with city/state/ZIP fallback
+        async function geocodeWithProxy(address) {
+            const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(nominatimUrl)}`;
+            
+            try {
+                // Try original address first
+                const response = await fetch(proxyUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const results = JSON.parse(data.contents);
+                
+                if (results && results.length > 0) {
+                    return {
+                        lat: parseFloat(results[0].lat),
+                        lon: parseFloat(results[0].lon),
+                        usedFallback: false
+                    };
+                }
+                
+                // If original fails, try city/state/ZIP fallback
+                debugLog(`  └─ Original failed, trying city/state/ZIP fallback...`);
+                const fallbackAddress = extractCityStateZip(address);
+                
+                if (fallbackAddress !== address) {
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+                    
+                    const fallbackUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackAddress)}`;
+                    const fallbackProxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(fallbackUrl)}`;
+                    
+                    const fallbackResponse = await fetch(fallbackProxyUrl);
+                    if (!fallbackResponse.ok) {
+                        throw new Error(`Fallback HTTP ${fallbackResponse.status}`);
+                    }
+                    
+                    const fallbackData = await fallbackResponse.json();
+                    const fallbackResults = JSON.parse(fallbackData.contents);
+                    
+                    if (fallbackResults && fallbackResults.length > 0) {
+                        debugLog(`  └─ Found using fallback: "${fallbackAddress}"`);
+                        return {
+                            lat: parseFloat(fallbackResults[0].lat),
+                            lon: parseFloat(fallbackResults[0].lon),
+                            usedFallback: true,
+                            fallbackAddress: fallbackAddress
+                        };
+                    }
+                }
+                
+                throw new Error('No geocoding results found for original or fallback address');
+                
+            } catch (error) {
+                throw new Error(`Geocoding failed: ${error.message}`);
+            }
+        }
+
+        // Function to process campaign data and create map
+        async function initializeMap() {
+            try {
+                // Load campaign data from CSV
+                const campaignData = await loadCampaignData();
+                console.log('Loaded campaign data:', campaignData.length, 'rows');
+
+                // Parse location data - handle both ZIP codes and radius targets
+                const zipToCampaign = {};
+                const radiusTargets = [];
+                
+                campaignData.forEach(row => {
+                    if (row.Location && row.Location.includes('|mi|')) {
+                        // Parse radius format: "10.0|mi|1305 S Main St, Chelsea, MI 48118"
+                        const parts = row.Location.split('|mi|');
+                        const radius = parseFloat(parts[0]);
+                        const address = parts[1];
+                        radiusTargets.push({
+                            address: address,
+                            radius: radius,
+                            campaign: row.Campaign
+                        });
+                    } else if (row.Location) {
+                        // Regular ZIP code
+                        const zip = row.Location.split(',')[0];
+                        zipToCampaign[zip] = row.Campaign;
+                    }
+                });
+
+                debugLog(`Found ${radiusTargets.length} radius targets`);
+                debugLog(`Found ${Object.keys(zipToCampaign).length} ZIP codes`);
+
+                // Generate colors for campaigns
+                const campaigns = [...new Set(campaignData.map(row => row.Campaign).filter(Boolean))];
+                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'];
+                const campaignColors = {};
+                campaigns.forEach((campaign, i) => {
+                    campaignColors[campaign] = colors[i % colors.length];
+                });
+
+                // Sample Michigan ZIP GeoJSON (replace with your 20MB file)
+                const sampleZipData = {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {"ZCTA5CE10": "48083"},
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": [[[-83.2, 42.5], [-83.1, 42.5], [-83.1, 42.6], [-83.2, 42.6], [-83.2, 42.5]]]
+                            }
+                        }
+                        // This is just a sample - your real GeoJSON will have hundreds of ZIP polygons
+                    ]
+                };
+
+                // Style function for ZIP codes
+                function getStyle(feature) {
+                    const zip = feature.properties.ZCTA5CE10;
+                    const campaign = zipToCampaign[zip];
+                    return {
+                        fillColor: campaign ? campaignColors[campaign] : '#cccccc',
+                        weight: 1,
+                        opacity: 1,
+                        color: 'white',
+                        fillOpacity: 0.7
+                    };
+                }
+
+                // Add ZIP polygons to map
+                function onEachFeature(feature, layer) {
+                    const zip = feature.properties.ZCTA5CE10;
+                    const campaign = zipToCampaign[zip];
+                    if (campaign) {
+                        layer.bindPopup(`<b>ZIP: ${zip}</b><br>${campaign}`);
+                    }
+                }
+
+                // Load GeoJSON and add radius circles
+                try {
+                    const geoResponse = await fetch('mi_michigan_zip_codes_geo.min.json');
+                    if (geoResponse.ok) {
+                        const data = await geoResponse.json();
+                        console.log('GeoJSON loaded, features:', data.features?.length);
+                        debugLog(`GeoJSON loaded: ${data.features?.length} features`);
+                        
+                        // Add ZIP polygons
+                        L.geoJSON(data, {
+                            style: getStyle,
+                            onEachFeature: onEachFeature
+                        }).addTo(map);
+                    } else {
+                        console.warn('GeoJSON file not found, using sample data');
+                        debugLog('GeoJSON not found, using sample data');
+                        // Use sample data if GeoJSON file doesn't exist
+                        L.geoJSON(sampleZipData, {
+                            style: getStyle,
+                            onEachFeature: onEachFeature
+                        }).addTo(map);
+                    }
+                } catch (geoError) {
+                    console.warn('Failed to load GeoJSON:', geoError);
+                    debugLog(`GeoJSON error: ${geoError.message}`);
+                    // Use sample data as fallback
+                    L.geoJSON(sampleZipData, {
+                        style: getStyle,
+                        onEachFeature: onEachFeature
+                    }).addTo(map);
+                }
+                
+                // Add radius circles using AllOrigins CORS proxy with city/state/ZIP fallback
+                debugLog(`Starting geocoding with city/state/ZIP fallbacks for ${radiusTargets.length} addresses...`);
+                
+                let successCount = 0;
+                let failCount = 0;
+                let fallbackCount = 0;
+                
+                // Process addresses with delay to avoid overwhelming the service
+                for (let i = 0; i < radiusTargets.length; i++) {
+                    const target = radiusTargets[i];
+                    debugLog(`Geocoding ${i + 1}/${radiusTargets.length}: ${target.address}`);
+                    
+                    try {
+                        const result = await geocodeWithProxy(target.address);
+                        
+                        // Add circle to map
+                        const circle = L.circle([result.lat, result.lon], {
+                            color: campaignColors[target.campaign],
+                            fillColor: campaignColors[target.campaign],
+                            fillOpacity: 0.3,
+                            radius: target.radius * 1609.34 // Convert miles to meters
+                        }).addTo(map);
+                        
+                        // Add popup with info about whether fallback was used
+                        const popupText = result.usedFallback 
+                            ? `<b>${target.campaign}</b><br>${target.radius} mile radius<br><small><i>Centered on: ${result.fallbackAddress}</i></small>`
+                            : `<b>${target.campaign}</b><br>${target.radius} mile radius<br>${target.address}`;
+                        
+                        circle.bindPopup(popupText);
+                        
+                        if (result.usedFallback) {
+                            debugLog(`✓ Success (fallback): ${target.address}`);
+                            fallbackCount++;
+                        } else {
+                            debugLog(`✓ Success: ${target.address}`);
+                        }
+                        successCount++;
+                        
+                        // Small delay between requests to be respectful
+                        if (i < radiusTargets.length - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                        }
+                        
+                    } catch (error) {
+                        debugLog(`✗ Failed: ${target.address} (${error.message})`);
+                        failCount++;
+                    }
+                }
+
+                debugLog(`Geocoding complete! ✓${successCount} success (${fallbackCount} used city/state/ZIP), ✗${failCount} failed`);
+
+                // Create legend
+                const legend = L.control({position: 'topright'});
+                legend.onAdd = function() {
+                    const div = L.DomUtil.create('div', 'legend');
+                    div.innerHTML = '<h4>Campaigns</h4>';
+                    campaigns.forEach(campaign => {
+                        div.innerHTML += `<div class="legend-item">
+                            <span class="legend-color" style="background: ${campaignColors[campaign]}"></span>
+                            ${campaign.replace('MCD-', '')}
+                        </div>`;
+                    });
+                    return div;
+                };
+                legend.addTo(map);
+
+                // Hide loading indicator
+                document.getElementById('loading').style.display = 'none';
+                
+                // Hide debug info after 12 seconds
+                setTimeout(() => {
+                    document.getElementById('debug').style.display = 'none';
+                }, 12000);
+
+            } catch (error) {
+                console.error('Error initializing map:', error);
+                document.getElementById('loading').innerHTML = `Error loading data: ${error.message}`;
+                debugLog(`ERROR: ${error.message}`);
+            }
+        }
+
+        // Initialize the map when page loads
+        initializeMap();
+    </script>
+</body>
+</html>
