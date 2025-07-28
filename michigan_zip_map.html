@@ -148,7 +148,7 @@
 
                 // Add ZIP polygons to map
                 function onEachFeature(feature, layer) {
-                    const zip = feature.properties.ZCTA5CE10;
+                    const zip = feature.properties.properties.ZCTA5CE10;
                     const campaign = zipToCampaign[zip];
                     if (campaign) {
                         layer.bindPopup(`<b>ZIP: ${zip}</b><br>${campaign}`);
